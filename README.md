@@ -11,5 +11,5 @@ data: contains the hash table to connect .xml files to patient PIN/ID, use this 
 
 
 
-*If you add new data ot the MUSE folder or have a different dataset you need to create this table again.
+*If you add new data to the MUSE folder or have a different dataset you need to create this table again.
 
