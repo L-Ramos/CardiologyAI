@@ -124,7 +124,7 @@ def get_excel_from_xml(excel_ids,hash_table):
                 #plot_ecg(signal)    
     return(data_signal,date,data_amp)
     
-def filter_by_date(hash_table,excel_ids,excel_dates,six_months):
+def filter_by_date(hash_table,excel_ids,excel_dates,date,six_months):
     """
     This function will further filter patients based on the date read from the file (excel in this case)
     Current options are 6 months before surgery or just before surgery, but that can be easily adapted.
@@ -178,7 +178,7 @@ def load_file(path_save,filename):
     infile.close()
     return(new_dict)
     
-def fix_excel(df,excel_field,excel_surgery):
+def fix_excel(df,excel_field,excel_surgery,label_name):
     """
     This function fixes some errors that came with the excel file, probably not very useful if you switch files, but can be adapted and makes the code easier to read
     Input:
@@ -198,14 +198,16 @@ def fix_excel(df,excel_field,excel_surgery):
             
         
     excel_dates=list(df[excel_surgery].astype(str))
+    excel_labels=list(df[label_name].astype(str))
     
     #Replacing nans with ridiculous date instead of excluding, they will never be used anyway
     excel_dates = ['1-1-1500' if str(x)=='nan' else x for x in excel_dates]  
     excel_dates = dict(zip(excel_ids,excel_dates))
+    labels = dict(zip(excel_ids,excel_labels))
     
-    return(excel_ids,excel_dates)
+    return(excel_ids,excel_dates,labels)
 
-def filter_rhythm(filter_date):
+def filter_by_rhythm(filter_date):
     filter_rhythm=defaultdict(list)   
     other_rhythms=defaultdict(list) 
     for key in tqdm(filter_date): 
