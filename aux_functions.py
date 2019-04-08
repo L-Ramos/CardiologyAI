@@ -13,13 +13,7 @@ l.a.ramos@amc.uva.nl - Lucas A. Ramos
 
 
 
-To filter all the ECGs in Sinus rhythm out of the dataset of the selected AF patients who underwent AF surgery, we can use the following part of the XML. 
 
-<DiagnosisStatement><StmtFlag>ENDSLINE</StmtFlag><StmtText>Sinusbradycardie</StmtText>
-
-For correct filtering we have to use all the synonyms for sinus rhythm (in dutch): Sinusritme, Sinus ritme, Sinusbradycardie, Sinustachycardie. 
-
-Best, Sarah 
 
 
 """
@@ -36,28 +30,37 @@ from tqdm import tqdm #need to install
 import pickle #need to install
 from datetime import datetime
 
-def plot_signal(signal,file_name,path_files):
-    fig = plt.figure(figsize=(20, 5))
-    ax = fig.add_subplot(1, 1, 1)
-
-    # TODO: Fix grid
-    if False:
-        ax = plt.gca()
-        ax.xaxis.set_major_locator(plt.MultipleLocator(0.25))
-        ax.xaxis.set_minor_locator(plt.MultipleLocator(0.05))
-        ax.yaxis.set_major_locator(plt.MultipleLocator(50.0))
-        ax.yaxis.set_minor_locator(plt.MultipleLocator(10.0))
-        ax.grid(which='major', axis='x', linewidth=2, alpha=0.3, linestyle='-', color='red')
-        ax.grid(which='minor', axis='x', linewidth=0.5, alpha=0.2, linestyle='-', color='red')
-        ax.grid(which='major', axis='y', linewidth=2, alpha=0.3, linestyle='-', color='red')
-        ax.grid(which='minor', axis='y', linewidth=0.5, alpha=0.2, linestyle='-', color='red')
-        ax.set_xticklabels([])
-        ax.set_yticklabels([])
-
-
-    max_len = int(len(signal)/2)
+def plot_signal(signal_list,file_name,path_files):
     
-    plt.plot(np.arange(0, 5, 5/max_len), signal[:max_len])
+    n_plots=len(signal_list)
+        
+    fig = plt.figure(figsize=(35, 15))
+    ax = fig.add_subplot(n_plots, 1, 1)
+    
+    x=211
+    
+    for i in range(n_plots):
+        s=np.array(signal_list[i])
+        
+        if False:
+            ax = plt.gca()
+            ax.xaxis.set_major_locator(plt.MultipleLocator(0.25))
+            ax.xaxis.set_minor_locator(plt.MultipleLocator(0.05))
+            ax.yaxis.set_major_locator(plt.MultipleLocator(50.0))
+            ax.yaxis.set_minor_locator(plt.MultipleLocator(10.0))
+            ax.grid(which='major', axis='x', linewidth=2, alpha=0.3, linestyle='-', color='red')
+            ax.grid(which='minor', axis='x', linewidth=0.5, alpha=0.2, linestyle='-', color='red')
+            ax.grid(which='major', axis='y', linewidth=2, alpha=0.3, linestyle='-', color='red')
+            ax.grid(which='minor', axis='y', linewidth=0.5, alpha=0.2, linestyle='-', color='red')
+            ax.set_xticklabels([])
+            ax.set_yticklabels([])
+
+
+        max_len = int(s.shape[0]/2)
+        plt.subplot(x)
+        x=x+1
+        plt.plot(np.arange(0, 5, 5/max_len), s[:max_len])
+        #plt.show()
     plt.savefig(path_files+'\\images\\'+file_name+'.png')
     plt.close(fig) 
     #plt.show()

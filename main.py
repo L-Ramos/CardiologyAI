@@ -14,7 +14,7 @@ l.a.ramos@amc.uva.nl - Lucas A. Ramos
 """
 
 
-from aux_functions import plot_signal, get_xml_hash, get_excel_from_xml, filter_by_date, save_file, load_file, fix_excel, filter_by_rhythm
+#from aux_functions import plot_signal, get_xml_hash, get_excel_from_xml, filter_by_date, save_file, load_file, fix_excel, filter_by_rhythm
 import aux_functions as af
 import xmltodict #need to install
 import base64
@@ -48,18 +48,18 @@ excel_surgery="Surgery Date" # name of the date field from the excel
 label_name="Out_1Y"
 
 #fixing excel problems, change according to your file
-excel_ids,excel_dates,labels=fix_excel(df,excel_field,excel_surgery,label_name)
+excel_ids,excel_dates,labels=af.fix_excel(df,excel_field,excel_surgery,label_name)
         
 #Checking if you already have the hash table, if you don't you should ask for it, otherwise this will take around 12 hours to run    
 if not os.path.isfile(path_files+files_names[0]):
     print("Hash table not found, check path or wait till one is created. Estimated time is shown below:")
-    hash_table,error_files=get_xml_hash(xml_path)
-    save_file(hash_table,path_files,files_names[0])
-    save_file(error_files,path_files, files_names[1])
+    hash_table,error_files=af.get_xml_hash(xml_path)
+    af.save_file(hash_table,path_files,files_names[0])
+    af.save_file(error_files,path_files, files_names[1])
 else:
     print("Hash table already available, loading!")
-    hash_table=load_file(path_files,files_names[0])    
-    error_files=load_file(path_files,files_names[1])    
+    hash_table=af.load_file(path_files,files_names[0])    
+    error_files=af.load_file(path_files,files_names[1])    
 
 
 #------------------------------------------------------------------------------------
@@ -68,14 +68,14 @@ else:
 #Check if the signal file has already been created, otherwise created it, this is where we filter the data based on the excel
 if not os.path.isfile(path_files+files_names[2]):
     print("Previous file not found. Matching Excel with .xml:")
-    data_signal,date,data_amp=get_excel_from_xml(excel_ids,hash_table)
-    save_file(data_signal,path_files,files_names[2])
-    save_file(date,path_files, files_names[3])
-    save_file(data_amp,path_files,files_names[4])
+    data_signal,date,data_amp=af.get_excel_from_xml(excel_ids,hash_table)
+    af.save_file(data_signal,path_files,files_names[2])
+    af.save_file(date,path_files, files_names[3])
+    af.save_file(data_amp,path_files,files_names[4])
 else:
     print("Loading Data!")
     #data_signal=load_file(path_files,files_names[2])  
-    date=load_file(path_files,files_names[3])  
+    date=af.load_file(path_files,files_names[3])  
     #data_amp=load_file(path_files,files_names[4])  
 
 #----------------------------------------------------------------------------------
@@ -83,12 +83,12 @@ else:
 #----------------------------------------------------------------------------------
 #filter_date contains all the xml that are before surgery date
 print("Filtering based on date!")
-filter_date,later_date=filter_by_date(hash_table,excel_ids,excel_dates,date,True)#True=only < 6 months
+filter_date,later_date=af.filter_by_date(hash_table,excel_ids,excel_dates,date,True)#True=only < 6 months
 print("Done filtering date!")
                     
 #Now we filter based on rhythm, sinus in this case
 print("Filtering based on rhythm")
-filter_rhythm,other_rhythms=filter_by_rhythm(filter_date)
+filter_rhythm,other_rhythms=af.filter_by_rhythm(filter_date)
 print("Done!") 
 
 
@@ -111,14 +111,15 @@ for key in tqdm(filter_rhythm):
                 data_signal[key].append(signal*amp)
                 #plot_ecg(signal)    
 
- 
-
+#d=data_signal.copy()
 #plotting and saving for visual analysis
-for key in tqdm(filter_rhythm): 
+
+for key in tqdm(data_signal): 
     signal=data_signal[key]    
     for i in range(len(filter_rhythm[key])):
         file_name=filter_rhythm[key][i]        
-        plot_signal(np.array(signal[i*8]),os.path.basename(file_name),path_files)
+        af.plot_signal((signal[i*8:(i*8+2)]),os.path.basename(file_name),path_files)
+#plot_signal(signal[0:1],os.path.basename(file_name),path_files)
 
 
 #quick check label balance and cout total leads
@@ -174,4 +175,20 @@ total_ecgs=0
 for key in (filter_rhythm):
     total_ecgs+=len(filter_rhythm[key])    
 print("Total ECGs after filtering by rhythm:%d, total patients:%d "%(total_ecgs,len(filter_rhythm.keys())))
-                
+
+
+
+file=r"G:\\diva1\\Research\\MUSE ECGs\\12_13_14\\MUSE_20180908_111456_43000.xml"
+with open(file) as fd:
+                ecg_dict = xmltodict.parse(fd.read(), process_namespaces=True)
+            mean_wave, leads = ecg_dict['RestingECG']['Waveform']                
+            for k,i in enumerate(leads['LeadData'][:]):
+                amp=float(leads['LeadData'][k]['LeadAmplitudeUnitsPerBit'])               
+                b64_encoded = ''.join(i['WaveFormData'].split('\n'))
+                decoded = base64.b64decode(b64_encoded)
+                signal = np.frombuffer(decoded, dtype='int16')
+                data_signal[key].append(signal*amp)
+
+for key in (filter_rhythm): 
+    if labels[key]=='999.0' or labels[key]=='nan':                
+        print(key)
