@@ -1,5 +1,5 @@
 # CardiologyAI
-Repository for the AI code developed for the Cardiology projects
+Repository for the AI code developed for the PLN project (Amsterdam UMC)
 
 Current content:
 
