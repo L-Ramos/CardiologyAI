@@ -1,194 +1,250 @@
-# -*- coding: utf-8 -*-
-"""
-This code was created by Ricardo and Lucas to parse ECG files in the .xml format
 
-The code contains functions to load all files and map them to their IDS, save and plot them.
-
-The names of the fields can change depending on the database, for the MUSE it is already set
-
-If you have any questions feel free to contact us on:
-
-r.riccilopes@amc.uva.nl Ricardo R Lopes or
-l.a.ramos@amc.uva.nl - Lucas A. Ramos
-
-"""
-
-
-#from aux_functions import plot_signal, get_xml_hash, get_excel_from_xml, filter_by_date, save_file, load_file, fix_excel, filter_by_rhythm
-import aux_functions as af
-import xmltodict #need to install
-import base64
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy.signal as sps
+from numpy.random import seed
+from tensorflow import set_random_seed
+import os
+from sklearn.metrics import f1_score
+
+import tensorflow as tf
+import tensorflow.keras.backend as K
+from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.metrics import confusion_matrix, f1_score, roc_curve, auc, accuracy_score
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler, Normalizer
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras import optimizers  
+
+#from imblearn.under_sampling import RandomUnderSampler
+import pickle
+import json
 import glob
-import os 
-import pandas as pd
-from collections import defaultdict
-from tqdm import tqdm #need to install
-import pickle #need to install
-from datetime import datetime
+import ntpath
 
-xml_path=r"G:\diva1\Research\MUSE ECGs\**\*.xml" #G disk folder with all ecgs
+#built json models
+import models as md
+import clean_data as cd
+from sklearn.linear_model import LogisticRegression
 
-#-------------------------------------------------------------------------------------------------------
-# DON'T FORGET TO SET THE 2 PATHs BELOW
-#-------------------------------------------------------------------------------------------------------
-
-#path where you want to save or load the processed files, if you already have a hash table and data files this is the path to it
-path_files=r"\\amc.intra\users\L\laramos\home\Desktop\Cardio ECG\\final"
-df = pd.read_excel(r"\\amc.intra\users\L\laramos\home\Desktop\Cardio ECG\Sarah outcome MiniMaze_DL.xlsx") #Excel file to use for filtering the ecgs
-
-#some names for the files, hash table is called ids_and_paths, error_files are the xml with problems for parsing, ecg_signal is dicionary with keys and signals
-#dates is a dictionary with the date of acquisition of each ecg and amplitudes for each ecg amplitude (sanity check)
-files_names= ['\\ids_and_paths','\\error_files','\\ecg_signal','\\dates','\\amplitudes']
-
-excel_field='PIN' #name of Excel field of patient ID, in this case it is the PIN
-xml_field="PatientID" #.xml field to connect to excel_field
-excel_surgery="Surgery Date" # name of the date field from the excel
-label_name="Out_1Y"
-
-#fixing excel problems, change according to your file
-excel_ids,excel_dates,labels=af.fix_excel(df,excel_field,excel_surgery,label_name)
-        
-#Checking if you already have the hash table, if you don't you should ask for it, otherwise this will take around 12 hours to run    
-if not os.path.isfile(path_files+files_names[0]):
-    print("Hash table not found, check path or wait till one is created. Estimated time is shown below:")
-    hash_table,error_files=af.get_xml_hash(xml_path)
-    af.save_file(hash_table,path_files,files_names[0])
-    af.save_file(error_files,path_files, files_names[1])
-else:
-    print("Hash table already available, loading!")
-    hash_table=af.load_file(path_files,files_names[0])    
-    error_files=af.load_file(path_files,files_names[1])    
+ 
 
 
-#------------------------------------------------------------------------------------
-#Filters by excel ids, if you need other filters check bellow
-#------------------------------------------------------------------------------------
-#Check if the signal file has already been created, otherwise created it, this is where we filter the data based on the excel
-if not os.path.isfile(path_files+files_names[2]):
-    print("Previous file not found. Matching Excel with .xml:")
-    data_signal,date,data_amp=af.get_excel_from_xml(excel_ids,hash_table)
-    af.save_file(data_signal,path_files,files_names[2])
-    af.save_file(date,path_files, files_names[3])
-    af.save_file(data_amp,path_files,files_names[4])
-else:
-    print("Loading Data!")
-    #data_signal=load_file(path_files,files_names[2])  
-    date=af.load_file(path_files,files_names[3])  
-    #data_amp=load_file(path_files,files_names[4])  
+#%%
 
-#----------------------------------------------------------------------------------
-#Filter for date   
-#----------------------------------------------------------------------------------
-#filter_date contains all the xml that are before surgery date
-print("Filtering based on date!")
-filter_date,later_date=af.filter_by_date(hash_table,excel_ids,excel_dates,date,True)#True=only < 6 months
-print("Done filtering date!")
-                    
-#Now we filter based on rhythm, sinus in this case
-print("Filtering based on rhythm")
-filter_rhythm,other_rhythms=af.filter_by_rhythm(filter_date)
-print("Done!") 
+#loads different data depending on the approach
+
+#class to keep the evaluation measures, per fold we append a new measure
+class Measures():
+    def __init__(self):
+        self.acc = list()
+        self.spec = list()
+        self.sens = list()
+        self.auc_list = list()
+        self.predictions = list()
+        self.labels = list()
+        self.auc = list()
+        self.f1 = list()
+
+### Data pre-processsing for model
 
 
-#Final get's the signal
-data_signal = defaultdict(list)  
-final_labels = defaultdict(list)  
-for key in tqdm(filter_rhythm): 
-    if labels[key]!='999.0' and labels[key]!='nan':
-        file_names=filter_rhythm[key]
-        final_labels[key].append(labels[key])        
-        for i in range(len(file_names)): 
-            with open(file_names[i]) as fd:
-                ecg_dict = xmltodict.parse(fd.read(), process_namespaces=True)
-            mean_wave, leads = ecg_dict['RestingECG']['Waveform']                
-            for k,i in enumerate(leads['LeadData'][:]):
-                amp=float(leads['LeadData'][k]['LeadAmplitudeUnitsPerBit'])               
-                b64_encoded = ''.join(i['WaveFormData'].split('\n'))
-                decoded = base64.b64decode(b64_encoded)
-                signal = np.frombuffer(decoded, dtype='int16')
-                data_signal[key].append(signal*amp)
-                #plot_ecg(signal)    
 
-#d=data_signal.copy()
-#plotting and saving for visual analysis
-
-for key in tqdm(data_signal): 
-    signal=data_signal[key]    
-    for i in range(len(filter_rhythm[key])):
-        file_name=filter_rhythm[key][i]        
-        af.plot_signal((signal[i*8:(i*8+2)]),os.path.basename(file_name),path_files)
-#plot_signal(signal[0:1],os.path.basename(file_name),path_files)
+init_seed = 36
 
 
-#quick check label balance and cout total leads
-cont_labels=0
-total_leads=0
-for key in final_labels:
-    cont_labels+=float(final_labels[key][0])
-    total_leads+=len(data_signal[key])  
-    
-#total_leads=int(total_leads/8)
-    
-#Fixing it to a nice format, numpy FTW
-keys=list(data_signal.keys())
-final_data=np.zeros((5000,total_leads),dtype="float32")
-cont_lead=0
-for i,key in enumerate(final_labels):
-    leads=data_signal[key]
-    
-    #for l in range(0,len(leads),8):
-    for l in range(0,len(leads)):
-        if leads[l].shape[0]==5000:
-            final_data[:,cont_lead]=leads[l]        
-            cont_lead+=1
+model_type="CNN"    
+
+conv_1d = True
+  
+
+data_type = "PLN"
+#data_type = "PLN_imbalanced"
+#data_type = "AF"
+
+results_folder = r"\\amc.intra\users\L\laramos\home\Desktop\Cardio ECG\ML pipeline\Latest Code\testSoftmax_Results_seed36"+data_type+"_"+model_type+"100_epochs\\"
+if not os.path.isdir(results_folder):
+    os.mkdir(results_folder)
+
+if data_type == "PLN":
+    data_path = r"\\amc.intra\users\L\laramos\home\Desktop\Cardio ECG\ML pipeline\Latest Code\data_PLN\\"
+    if model_type=="CNN": 
+        if not conv_1d:
+            params_files = glob.glob(r"\\amc.intra\users\L\laramos\home\Desktop\Cardio ECG\ML pipeline\Latest Code\CNN_model*")
         else:
-            final_data[0:2500,cont_lead]=leads[l]        
-            cont_lead+=1
+            params_files = glob.glob(r"\\amc.intra\users\L\laramos\home\Desktop\Cardio ECG\ML pipeline\Latest Code\CNN_1d_model*")
+        with open(data_path+'data_beats', 'rb') as f:
+            beat_list = pickle.load(f)  
+        with open(data_path+'labels_data_beats', 'rb') as f:
+            target_values = pickle.load(f)      
+    else:
+        params_files = glob.glob(r"\\amc.intra\users\L\laramos\home\Desktop\Cardio ECG\ML pipeline\Latest Code\LSTM_model*") 
+        with open(data_path+'data_beats_LSTM', 'rb') as f:
+            beat_list = pickle.load(f)  
+        with open(data_path+'labels_data_beats_LSTM', 'rb') as f:
+            target_values = pickle.load(f) 
+            
+elif data_type=="AF":
+    data_path = r"\\amc.intra\users\L\laramos\home\Desktop\Cardio ECG\ML pipeline\Latest Code\data_AF\\"
+    if model_type=="CNN":
+        if not conv_1d:
+            params_files = glob.glob(r"\\amc.intra\users\L\laramos\home\Desktop\Cardio ECG\ML pipeline\Latest Code\CNN_model*")
+        else:
+            params_files = glob.glob(r"\\amc.intra\users\L\laramos\home\Desktop\Cardio ECG\ML pipeline\Latest Code\CNN_1d_model*")
+        with open(data_path+'data_beats_singlescan_SR', 'rb') as f:
+            beat_list = pickle.load(f)  
+        with open(data_path+'labels_beat_singlescan_SR', 'rb') as f:
+            target_values = pickle.load(f)      
+    else:
+        params_files = glob.glob(r"\\amc.intra\users\L\laramos\home\Desktop\Cardio ECG\ML pipeline\Latest Code\LSTM_model*") 
+        with open(data_path+'data_beats_LSTM', 'rb') as f:
+            beat_list = pickle.load(f)  
+        with open(data_path+'labels_data_beats_LSTM', 'rb') as f:
+            target_values = pickle.load(f) 
     
+ 
+
+# %% ----------------------------------------------------------------------
+### Machine learning
+# -*- coding: utf-8 -*-
+
+l_rates = [0.00001,0.00005,0.0005]   
+np.random.seed(init_seed)
+splits = []
+measures = []
+
+skf = StratifiedKFold(n_splits=4, random_state=init_seed, shuffle=True)
+
+epochs = 100
+
+m_list = list()
     
-for i,key in enumerate(final_labels):
-    leads=data_signal[key]
-    found=False
-    for l in range(0,len(leads),8):
-        if leads[l].shape[0]==5000:
-            found=True
-    if not found:
-        print(key)
+for file_name in params_files:
+    for lr in l_rates:
+        m_eval = Measures()
+        for fold,(train_index, test_index) in enumerate(skf.split(beat_list, target_values)):
+            
+            splits.append([test_index])
+        
+            train_index, val_index = \
+                train_test_split(train_index, test_size=0.2, stratify=np.array(target_values)[train_index],random_state=init_seed)
+            #reading json file with the parameters
+            name = ntpath.basename(file_name)
+            
+            #loads the parameters
+            with open(file_name, 'r') as f:
+                 params = json.load(f)
+                    
+            #fixed model
+            #model = md.LSTM_model_1()
+            
+            if model_type == "CNN":
+                X_tr,X_tes,X_val,y_tr,y_val,y_tes,input_shape = cd.Clean_Data_CNN(train_index, val_index,test_index,beat_list, target_values,conv_1d)                
+            else:
+                X_tr,X_tes,X_val,y_tr,y_val,y_tes = cd.Clean_Data_LSTM(train_index, val_index,test_index,beat_list, target_values)
+                input_shape = (4,8,256,1)#LSTM
+            if fold>0:
+                break
 
+            
+            sample_size = y_tr.shape[0]
+            tot_pos = np.sum(y_tr,axis=0)
+            tot_neg = sample_size - tot_pos
 
+            w_0 = (1 / tot_neg)*(sample_size)/2.0 
+            w_1 = (1 / tot_pos)*(sample_size)/2.0
+            
+            c_w_0 = {0: w_0, 1:w_1}  
+            
+            model = md.Build_Model(params,input_shape,lr,w_0,w_1)  
+            #model = Cnn_Model_1()
+            rms = optimizers.RMSprop(lr=lr, decay=1e-6)
+            #rms = optimizers.Adam(lr=lr)
+            model.compile(loss='binary_crossentropy', optimizer=rms, metrics=['accuracy'])
+    
+            history = model.fit(X_tr,
+                                  y_tr,
+                                  #batch_size=int(X_tr.shape[0]/4),#Weird, too big
+                                  batch_size=128,
+                                  shuffle=True,
+                                  epochs=epochs,
+                                  #validation_split=0.2,
+                                  validation_data=(X_val, y_val),
+                                  verbose=1)
+                                  #class_weight=[c_w_0])
+            #models.append(model)
+            #model_cam = model
+            # summarize history for accuracy
+            plt.figure()
+            plt.plot(history.history['acc'])
+            plt.plot(history.history['val_acc'])
+            plt.title('model acc')
+            plt.ylabel('acc')
+            plt.xlabel('epoch')
+            plt.legend(['train', 'val'], loc='upper left')
+            plt.savefig(results_folder+'acc_train_validation_'+name+str(lr)+'.pdf')
+            
+            # summarize history for loss
+            plt.figure()
+            plt.plot(history.history['loss'])
+            plt.plot(history.history['val_loss'])
+            plt.title('model loss')
+            plt.ylabel('loss')
+            plt.xlabel('epoch')
+            plt.legend(['train', 'val'], loc='upper left')
+            plt.savefig(results_folder+'loss_train_validation_'+name+str(lr)+'.pdf')
+        
+            y_pred = model.predict(X_tes)
+            m_eval.predictions.append(y_pred)
+            m_eval.labels.append(y_tes)
+            tn, fp, fn, tp = confusion_matrix(y_tes[:,1], (y_pred[:,1] > 0.5)).ravel()   
+            
+            m_eval.sens.append(tp/(tp+fn))
+            m_eval.spec.append(tn/(tn+fp))
+            m_eval.acc.append(accuracy_score(y_tes[:,1], (y_pred[:,1] > 0.5)))
+            m_eval.f1.append(f1_score(y_tes[:,1], (y_pred[:,1] > 0.5)))
+            print("Sensitivity: ",tp/(tp+fn))  
+            print("Specificity: ",tn/(tn+fp))
+            print("Accuracy: ",accuracy_score(y_tes[:,1], (y_pred[:,1] > 0.5)))
+            
+            y_pred_tr = model.predict(X_tr)
+            y_pred_tes = model.predict(X_tes)
+            
+            fpr_tr, tpr_tr, thresholds_tr = roc_curve(y_tr[:,1], y_pred_tr[:,1])
+            auc_tr = auc(fpr_tr, tpr_tr)
+            fpr_tes, tpr_tes, thresholds_tes = roc_curve(y_tes[:,1], y_pred_tes[:,1])
+            auc_tes = auc(fpr_tes, tpr_tes)
+            m_eval.auc.append(auc_tes)
+            
+            plt.figure(figsize=(7,6))
+            plt.plot([0, 1], [0, 1], 'k--')
+            plt.plot(fpr_tes, tpr_tes, label='Testing = {:.2f}'.format(auc_tes))
+            plt.plot(fpr_tr, tpr_tr, label='Training = {:.2f}'.format(auc_tr))
+            plt.xlabel('False positive rate')
+            plt.ylabel('True positive rate')
+            plt.title('Receiver-operating characteristic curve', fontsize=13)
+            plt.legend(loc='lower right')
+            plt.savefig(results_folder+'auc_'+name+str(lr)+'.pdf')    
+            model.save(results_folder+name+str(lr)+"_"+str(fold)+'.h5')
+            #clear the model, to make sure it trains a new one, prevents data leakage
+            del model
+            tf.reset_default_graph() # for being sure
+            K.clear_session()
+            #cuda.select_device(0)
+            #cuda.close()
+        m_list.append(m_eval)
+        print(m_eval.auc)
+        
 
+      
+with open(results_folder+'measures'+data_type+"_"+model_type, 'wb') as f:
+    pickle.dump(m_list,f)
 
-total_ecgs=0
-for key in (hash_table):
-    total_ecgs+=len(hash_table[key])
-print("Total ECGs in the original folder:%d, total patients: %d"%(total_ecgs,len(hash_table.keys())))
+#prints some results        
+for m in m_list:
+    print(np.mean(m.acc))
+    
+for m in m_list:
+    print(np.mean(m.auc))
+    
 
-total_ecgs=0
-for key in (filter_date):
-    total_ecgs+=len(filter_date[key])    
-print("Total ECGs after filtering date:%d, total patients: %d"%(total_ecgs,len(filter_date.keys())))
-                
-
-total_ecgs=0
-for key in (filter_rhythm):
-    total_ecgs+=len(filter_rhythm[key])    
-print("Total ECGs after filtering by rhythm:%d, total patients:%d "%(total_ecgs,len(filter_rhythm.keys())))
-
-
-
-file=r"G:\\diva1\\Research\\MUSE ECGs\\12_13_14\\MUSE_20180908_111456_43000.xml"
-with open(file) as fd:
-                ecg_dict = xmltodict.parse(fd.read(), process_namespaces=True)
-            mean_wave, leads = ecg_dict['RestingECG']['Waveform']                
-            for k,i in enumerate(leads['LeadData'][:]):
-                amp=float(leads['LeadData'][k]['LeadAmplitudeUnitsPerBit'])               
-                b64_encoded = ''.join(i['WaveFormData'].split('\n'))
-                decoded = base64.b64decode(b64_encoded)
-                signal = np.frombuffer(decoded, dtype='int16')
-                data_signal[key].append(signal*amp)
-
-for key in (filter_rhythm): 
-    if labels[key]=='999.0' or labels[key]=='nan':                
-        print(key)
+  
