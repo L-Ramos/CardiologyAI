@@ -1,39 +1,40 @@
 # CardiologyAI
 Repository for the AI code developed for the PLN project (Amsterdam UMC)
 
+It contains code for cleaning and pre processing data, as well as code for creating and optimizing models.
+
 Current content:
 
-files
-
-find_ecg_data: main file with all functions and most recent code.
-
-Contains the hash table to connect .xml files to patient PIN/ID, use this table to filter your patient group, it will be a lot faster than creating your own*.
-
-Download it here and add to the repository folder:
-https://drive.google.com/drive/folders/13m9tzNpo8dLly73ImJeAJHqdc3kop7EH?usp=sharing
-
-You can also download a list of the ECG plots that were checked by the experts from the same link. This is used to filter the data.
-
-
-
-
-
-
-
-
-
-
-
-Older versions:
 
 pre_process_data.py: file for reading and converting ecg signals in .xml format
 
-ids_and_paths: contains the hash table to connect .xml files to patient PIN/ID, use this table to filter your patient group, it will be a lost faster than create your own*.
+find_ecg_data: main file with all functions needed to clean and select patient data. Uses aux_functions.py.
 
-Download it here and add to the repository folder:
-https://drive.google.com/drive/folders/13m9tzNpo8dLly73ImJeAJHqdc3kop7EH?usp=sharing
+main: main code to load the data and train the models
 
-SR_ECGs_Minimaze
+clean_data: used by main to organize the beats in the right format
 
-*If you add new data to the MUSE folder or have a different dataset you need to create this table again.
+models: used to define the models to be trained, it uses the output from create_json to generate the models defined there
+
+create_json: saves each ditcionary of parameters into a json to be loaded as an individual model
+
+grad_cam: used for visualization, it has an adaptation for 1DCNN
+
+visualization: loads trained models and compute relevant regions 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
